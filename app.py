@@ -111,14 +111,16 @@ with tab2:
         filter_state = st.multiselect(
             "Filter by State",
             options=sorted(df["State"].unique()),
-            default=[]
+            default=[],
+            key="data_table_filter_state"  # Add unique key
         )
     
     with col2:
         filter_year = st.multiselect(
             "Filter by Year",
             options=sorted(df["Year"].unique()),
-            default=[]
+            default=[],
+            key="data_table_filter_year"  # Add unique key
         )
     
     # Apply filters
@@ -131,9 +133,9 @@ with tab2:
     # Add sorting functionality and pagination in a single row
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        sort_col = st.selectbox("Sort by column", options=df.columns.tolist())
+        sort_col = st.selectbox("Sort by column", options=df.columns.tolist(), key="data_table_sort_col")
     with col2:
-        sort_order = st.radio("Sort order", options=["Ascending", "Descending"], horizontal=True)
+        sort_order = st.radio("Sort order", options=["Ascending", "Descending"], horizontal=True, key="data_table_sort_order")
     with col3:
         # Calculate pagination info
         rows_per_page = 15
@@ -215,7 +217,7 @@ with tab4:
         if "United States" in states:
             states.remove("United States")
             
-        select_all_states = st.checkbox("Select All States", value=True)  # Default to checked
+        select_all_states = st.checkbox("Select All States", value=True, key="chart_select_all_states")  # Add unique key
         if select_all_states:
             selected_states = states
             # Hide the multiselect when all are selected
@@ -224,29 +226,45 @@ with tab4:
         
         # Replace year range slider with year selection
         years = sorted(df["Year"].unique().tolist())
-        # Only show year selection if appropriate for the chart type
-        if chart_type in ["Bar Chart", "Stacked Bar Chart", "Pie Chart", "Choropleth Map"]:
-            selected_year = st.selectbox(
-                "Select Year",
-                options=["All Years"] + years,
-                index=0,  # Default to "All Years"
-            )
-        elif chart_type == "Heat Map":
-            # For Heat Map, set the year to "All Years" implicitly but don't show the widget
-            selected_year = "All Years"
-            st.write("*Heat Map visualizes data across all years automatically*")
+        min_year = min(years)
+        max_year = max(years)
+        
+        # Use different year selection controls based on chart type
+        if chart_type in ["Bar Chart", "Stacked Bar Chart", "Pie Chart", "Histogram", "Choropleth Map", "Heat Map"]:
+            # For these charts, use a slider for year selection
+            if chart_type == "Heat Map":
+                selected_year = "All Years"
+                st.write("*Heat Map visualizes data across all years automatically*")
+            else:
+                # Add an "All Years" option
+                use_all_years = st.checkbox("Show all years", value=True, key=f"show_all_years_{chart_type}")  # Add unique key
+                
+                if use_all_years:
+                    selected_year = "All Years"
+                else:
+                    # Use a slider for specific year selection in the sidebar
+                    selected_year = st.slider(
+                        "Select Initial Year",
+                        min_value=min_year,
+                        max_value=max_year,
+                        value=max_year,  # Default to most recent year
+                        step=1,
+                        format="%d",  # Format as integer
+                        key="sidebar_year_slider"
+                    )
         else:
-            # For other chart types
+            # For other chart types (Line Chart, Scatter Plot)
             selected_year = "All Years"
         
         # For line chart, add option to aggregate all states, default to True
         if chart_type == "Line Chart":
-            aggregate_states = st.checkbox("Aggregate all states (single trend line)", value=True)
+            aggregate_states = st.checkbox("Aggregate all states (single trend line)", value=True, key="line_chart_aggregate_states")
             aggregation_method = st.radio(
                 "Aggregation method:",
                 ["Mean (Average)", "Sum (Total)"],
                 horizontal=True,
-                disabled=not aggregate_states
+                disabled=not aggregate_states,
+                key="line_chart_aggregation_method"
             )
             
         # Metric selection based on chart type
@@ -264,11 +282,11 @@ with tab4:
             if chart_type == "Stacked Bar Chart":
                 metric_groups.pop("Population", None)
             
-            metric_group = st.selectbox("Select Metric Group", list(metric_groups.keys()))
+            metric_group = st.selectbox("Select Metric Group", list(metric_groups.keys()), key=f"metric_group_{chart_type}")
             
             # Only show the specific metric selection for chart types other than Stacked Bar Chart
             if chart_type != "Stacked Bar Chart":
-                selected_metric = st.selectbox("Select Specific Metric", metric_groups[metric_group])
+                selected_metric = st.selectbox("Select Specific Metric", metric_groups[metric_group], key=f"specific_metric_{chart_type}")
             else:
                 # For Stacked Bar Chart, we'll use the first metric in the group (All) by default
                 selected_metric = [col for col in metric_groups[metric_group] if ".All" in col][0]
@@ -277,8 +295,8 @@ with tab4:
 
         # For scatter plot only (removed bubble chart)
         if chart_type in ["Scatter Plot"]:
-            x_metric = st.selectbox("Select X Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=0)
-            y_metric = st.selectbox("Select Y Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=1)
+            x_metric = st.selectbox("Select X Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=0, key="scatter_x_metric")
+            y_metric = st.selectbox("Select Y Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=1, key="scatter_y_metric")
         
         # For pie chart
         if chart_type == "Pie Chart":
@@ -287,22 +305,14 @@ with tab4:
                 "Violent Crime Totals": [col for col in df.columns if "Data.Totals.Violent" in col],
                 "Property Crime Totals": [col for col in df.columns if "Data.Totals.Property" in col]
             }
-            pie_metric_group = st.selectbox("Select Metric Group for Pie Chart", list(pie_metric_groups.keys()))
-            pie_metric = st.selectbox("Select Specific Metric for Pie Chart", pie_metric_groups[pie_metric_group])
-            pie_year = st.selectbox("Select Year for Pie Chart", years, index=len(years)-1)
+            pie_metric_group = st.selectbox("Select Metric Group for Pie Chart", list(pie_metric_groups.keys()), key="pie_metric_group")
+            pie_metric = st.selectbox("Select Specific Metric for Pie Chart", pie_metric_groups[pie_metric_group], key="pie_specific_metric")
+            pie_year = st.selectbox("Select Year for Pie Chart", years, index=len(years)-1, key="pie_year")
         
         # For choropleth map (renamed from heatmap)
         if chart_type == "Choropleth Map":
-            map_year = st.selectbox("Select Year for Map", years, index=len(years)-1)
+            map_year = st.selectbox("Select Year for Map", years, index=len(years)-1, key="map_year")
             # Remove the metric group selection and reuse the selected_metric from above
-        
-        # For stacked bar chart, add y-axis selection
-        if chart_type == "Stacked Bar Chart":
-            stacked_y_option = st.radio(
-                "Y-Axis Display",
-                ["Absolute Values", "Percentage (100% Stacked)"],
-                horizontal=True
-            )
         
         # For heat map
         if chart_type == "Heat Map":
@@ -311,12 +321,9 @@ with tab4:
             heatmap_metric = st.selectbox(
                 "Select Metric for Heat Map", 
                 df.select_dtypes(include=[np.number]).columns.tolist(),
-                index=heatmap_default_idx
+                index=heatmap_default_idx,
+                key="heatmap_metric"
             )
-
-        # For bar and stacked bar chart, add year aggregation explanation if All Years selected
-        if chart_type in ["Bar Chart", "Stacked Bar Chart"] and selected_year == "All Years":
-            st.info("Showing average values across all years")
 
     # Right column for chart description and visualization
     with col2:
@@ -345,32 +352,123 @@ with tab4:
             filtered_df = df[df["State"].isin(selected_states)]
             
             # Apply year filter if a specific year is selected and not viewing Heat Map
-            if selected_year != "All Years":
+            if not isinstance(selected_year, str):
                 filtered_df = filtered_df[filtered_df["Year"] == selected_year]
         
         # Display different charts based on selection
         if not filtered_df.empty:
             if chart_type == "Bar Chart":
-                if selected_year == "All Years":
-                    # Group by state and take the mean of the selected metric across all years
-                    chart_title = f"Average {selected_metric} by State (All Years)"
-                    chart_data = filtered_df.groupby("State")[selected_metric].mean().reset_index()
-                else:
-                    # Filter to specific year and just group by state
-                    year_data = filtered_df[filtered_df["Year"] == int(selected_year)]
-                    chart_title = f"{selected_metric} by State ({selected_year})"
-                    chart_data = year_data.groupby("State")[selected_metric].mean().reset_index()
+                # Add year slider above the chart if not showing all years
+                interactive_year = selected_year
+                if selected_year != "All Years":
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        interactive_year = st.slider(
+                            "Drag to change year:",
+                            min_value=min_year,
+                            max_value=max_year,
+                            value=selected_year,
+                            step=1,
+                            format="%d",
+                            key=f"bar_chart_slider_{chart_type}"
+                        )
+                    with col2:
+                        # Add a second slider for comparison year
+                        comparison_year = st.slider(
+                            "Compare with year:",
+                            min_value=min_year,
+                            max_value=max_year,
+                            value=max(min_year, selected_year-5) if isinstance(selected_year, int) else min_year,
+                            step=1,
+                            format="%d",
+                            key=f"bar_chart_comparison_slider_{chart_type}"
+                        )
                 
-                chart_data = chart_data.sort_values(selected_metric, ascending=False)
+                # Layout for chart and data table side by side
+                chart_col, data_col = st.columns([3, 2])
                 
-                fig = px.bar(chart_data, x="State", y=selected_metric, 
-                            title=chart_title,
-                            color="State")
+                with chart_col:
+                    if interactive_year == "All Years":
+                        # Group by state and take the mean of the selected metric across all years
+                        chart_title = f"Average {selected_metric} by State (All Years)"
+                        chart_data = filtered_df.groupby("State")[selected_metric].mean().reset_index()
+                    else:
+                        # Filter to specific year and just group by state
+                        # Fix the syntax error in filtering
+                        year_data = df[(df["Year"] == int(interactive_year)) & (df["State"].isin(selected_states))]
+                        chart_title = f"{selected_metric} by State ({interactive_year})"
+                        chart_data = year_data.groupby("State")[selected_metric].mean().reset_index()
+                        
+                        # If comparing years, add comparison data
+                        if 'comparison_year' in locals() and comparison_year != interactive_year:
+                            comparison_data = df[(df["Year"] == int(comparison_year)) & (df["State"].isin(selected_states))]
+                            comparison_data = comparison_data.groupby("State")[selected_metric].mean().reset_index()
+                            comparison_data = comparison_data.rename(columns={selected_metric: f"{selected_metric}_{comparison_year}"})
+                            chart_data = chart_data.merge(comparison_data, on="State", how="left")
+                            chart_title = f"{selected_metric} by State (Comparing {interactive_year} vs {comparison_year})"
+                            
+                            # Calculate percent change for more insightful comparison
+                            chart_data["Percent Change"] = ((chart_data[selected_metric] - chart_data[f"{selected_metric}_{comparison_year}"]) / 
+                                                           chart_data[f"{selected_metric}_{comparison_year}"]) * 100
+                    
+                    chart_data = chart_data.sort_values(selected_metric, ascending=False)
+                    
+                    fig = px.bar(chart_data, x="State", y=selected_metric, 
+                                title=chart_title,
+                                color="State")
+                    
+                    fig.update_layout(xaxis_title="State", yaxis_title=selected_metric)
+                    st.plotly_chart(fig, use_container_width=True, key=f"bar_chart_{interactive_year}")
                 
-                fig.update_layout(xaxis_title="State", yaxis_title=selected_metric)
-                st.plotly_chart(fig, use_container_width=True)
+                with data_col:
+                    st.subheader("Data Table")
+                    # Format the data for display
+                    display_data = chart_data.copy()
+                    
+                    # Round numeric columns to 2 decimal places
+                    numeric_cols = display_data.select_dtypes(include=[np.number]).columns
+                    for col in numeric_cols:
+                        display_data[col] = display_data[col].round(2)
+                    
+                    # If we have comparison data, highlight the percent change
+                    if 'comparison_year' in locals() and comparison_year != interactive_year and 'Percent Change' in display_data.columns:
+                        # Add + sign to positive percent changes
+                        display_data["Percent Change"] = display_data["Percent Change"].apply(
+                            lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%"
+                        )
+                        
+                        # Create a styled dataframe
+                        st.write(f"Data comparing {interactive_year} to {comparison_year}")
+                        
+                    st.dataframe(display_data, use_container_width=True, key=f"bar_chart_data_{interactive_year}")
             
             elif chart_type == "Stacked Bar Chart":
+                # Add year slider above the chart if not showing all years
+                interactive_year = selected_year
+                if selected_year != "All Years":
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        interactive_year = st.slider(
+                            "Drag to change year:",
+                            min_value=min_year,
+                            max_value=max_year,
+                            value=selected_year,
+                            step=1,
+                            format="%d",
+                            key=f"stacked_bar_chart_slider_{chart_type}"
+                        )
+                    with col2:
+                        # Add a second slider for comparison year
+                        comparison_year = st.slider(
+                            "Compare with year:",
+                            min_value=min_year,
+                            max_value=max_year,
+                            value=max(min_year, selected_year-5) if isinstance(selected_year, int) else min_year,
+                            step=1,
+                            format="%d",
+                            key=f"stacked_bar_chart_comparison_slider_{chart_type}"
+                        )
+                
                 # For stacked bar chart, we always need to work with component metrics
                 # Get the base category (Property/Violent and Rates/Totals)
                 crime_category = ""
@@ -401,15 +499,22 @@ with tab4:
                     specific_crime = selected_metric.split(".")[-1].capitalize()
                     chart_subtitle = f"{crime_category} Crime {data_type} - {specific_crime}"
                 
-                if selected_year == "All Years":
+                if interactive_year == "All Years":
                     # Average across all years
                     chart_title = f"Breakdown of {chart_subtitle} by State (All Years)"
                     chart_data = filtered_df.groupby("State")[metrics].mean().reset_index()
                 else:
-                    # Filter to specific year
-                    year_data = filtered_df[filtered_df["Year"] == int(selected_year)]
-                    chart_title = f"Breakdown of {chart_subtitle} by State ({selected_year})"
+                    # Filter to specific year - Fix the syntax error in filtering
+                    year_data = df[(df["Year"] == int(interactive_year)) & (df["State"].isin(selected_states))]
+                    chart_title = f"Breakdown of {chart_subtitle} by State ({interactive_year})"
                     chart_data = year_data.groupby("State")[metrics].mean().reset_index()
+                    
+                    # If comparing years, add this information to the title
+                    if 'comparison_year' in locals() and comparison_year != interactive_year:
+                        # We don't actually need to modify the data for stacked bar,
+                        # but we can acknowledge the comparison year in the title
+                        comparison_title = f" (Main: {interactive_year}, Comparison: Use slider to switch)"
+                        chart_title += comparison_title
                 
                 # Clean up metric names for the legend
                 melted_data = pd.melt(chart_data, id_vars=["State"], value_vars=metrics, 
@@ -431,6 +536,15 @@ with tab4:
                     "Motor": "#e377c2"     # pink
                 }
                 
+                # For stacked bar chart, add y-axis selection
+                if chart_type == "Stacked Bar Chart":
+                    stacked_y_option = st.radio(
+                        "Y-Axis Display",
+                        ["Absolute Values", "Percentage (100% Stacked)"],
+                        horizontal=True,
+                        key=f"stacked_y_option_{interactive_year}"  # Make key unique with interactive_year
+                    )
+                
                 # Determine whether to use absolute values or percentages
                 if 'stacked_y_option' in locals() and stacked_y_option == "Percentage (100% Stacked)":
                     fig = px.bar(melted_data, x="State", y="Value", color="Crime Type",
@@ -449,7 +563,7 @@ with tab4:
                     legend_title="Crime Type"
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"stacked_bar_chart_{interactive_year}")
                 
                 # Add explanation based on y-axis selection
                 if 'stacked_y_option' in locals() and stacked_y_option == "Percentage (100% Stacked)":
@@ -482,7 +596,7 @@ with tab4:
                                 title=f"Trend of {selected_metric} Over Time by State")
                 
                 fig.update_layout(xaxis_title="Year", yaxis_title=selected_metric)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="line_chart")
                 
                 # Add explanation for aggregated line chart
                 if aggregate_states:
@@ -498,13 +612,32 @@ with tab4:
                         """)
                 
             elif chart_type == "Histogram":
+                # Add year slider above the chart if not showing all years
+                interactive_year = selected_year
+                if selected_year != "All Years":
+                    interactive_year = st.slider(
+                        "Drag to change year:",
+                        min_value=min_year,
+                        max_value=max_year,
+                        value=selected_year,
+                        step=1,
+                        format="%d",
+                        key=f"histogram_slider_{chart_type}"  # Make key unique for this chart type
+                    )
+                
+                # Filter data based on the interactive year - Fix the syntax error in filtering
+                if interactive_year != "All Years":
+                    hist_data = df[(df["Year"] == int(interactive_year)) & (df["State"].isin(selected_states))]
+                else:
+                    hist_data = filtered_df
+                
                 # Create columns for histogram and stats side by side
                 hist_col, stat_col = st.columns([3, 1])
                 
                 with hist_col:
                     # Create histogram without color breakdown by state
-                    fig = px.histogram(filtered_df, x=selected_metric,
-                                      title=f"Distribution of {selected_metric}")
+                    fig = px.histogram(hist_data, x=selected_metric,
+                                      title=f"Distribution of {selected_metric}" + (f" ({interactive_year})" if interactive_year != "All Years" else " (All Years)"))
                     
                     # Add borders to histogram bars
                     fig.update_traces(
@@ -518,18 +651,18 @@ with tab4:
                         yaxis_title="Count"
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"histogram_{interactive_year}")
                 
                 with stat_col:
                     # Add statistical summary for the selected metric
                     st.subheader("Statistical Summary")
                     hist_stats = {
-                        "Mean": filtered_df[selected_metric].mean().round(2),
-                        "Median": filtered_df[selected_metric].median().round(2),
-                        "Std Dev": filtered_df[selected_metric].std().round(2),
-                        "Min": filtered_df[selected_metric].min().round(2),
-                        "Max": filtered_df[selected_metric].max().round(2),
-                        "Count": len(filtered_df)
+                        "Mean": hist_data[selected_metric].mean().round(2),
+                        "Median": hist_data[selected_metric].median().round(2),
+                        "Std Dev": hist_data[selected_metric].std().round(2),
+                        "Min": hist_data[selected_metric].min().round(2),
+                        "Max": hist_data[selected_metric].max().round(2),
+                        "Count": len(hist_data)
                     }
                     
                     # Create a styled display for the statistics
@@ -561,8 +694,19 @@ with tab4:
                         """, unsafe_allow_html=True)
                 
             elif chart_type == "Pie Chart":
-                # Filter to specific year for pie chart
-                pie_data = filtered_df[filtered_df["Year"] == pie_year]
+                # Add interactive year slider above the chart
+                interactive_year = st.slider(
+                    "Drag to change year:",
+                    min_value=min_year,
+                    max_value=max_year,
+                    value=pie_year if isinstance(pie_year, int) else max_year,
+                    step=1,
+                    format="%d",
+                    key=f"pie_chart_slider_{chart_type}"  # Make key unique for this chart type
+                )
+                
+                # Filter to the year selected by the slider - Fix the syntax error in filtering
+                pie_data = df[(df["Year"] == interactive_year) & (df["State"].isin(selected_states))]
                 
                 # Get top 6 states by the selected metric
                 top_states = pie_data.nlargest(6, pie_metric)["State"].tolist()
@@ -575,9 +719,9 @@ with tab4:
                 pie_chart_data = pie_chart_data.groupby("State")[pie_metric].sum().reset_index()
                 
                 fig = px.pie(pie_chart_data, values=pie_metric, names="State",
-                            title=f"Distribution of {pie_metric} by State in {pie_year}")
+                            title=f"Distribution of {pie_metric} by State in {interactive_year}")
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"pie_chart_{interactive_year}")
                 
             elif chart_type == "Scatter Plot":
                 # If all states are selected and the "Select All States" option is checked,
@@ -595,11 +739,22 @@ with tab4:
                                     title=f"Relationship between {x_metric} and {y_metric}")
                 
                 fig.update_layout(xaxis_title=x_metric, yaxis_title=y_metric)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="scatter_plot")
                 
             elif chart_type == "Choropleth Map":
+                # Add interactive year slider above the map
+                interactive_year = st.slider(
+                    "Drag to change year:",
+                    min_value=min_year,
+                    max_value=max_year,
+                    value=map_year if isinstance(map_year, int) else max_year,
+                    step=1,
+                    format="%d",
+                    key=f"choropleth_map_slider_{chart_type}"  # Make key unique for this chart type
+                )
+                
                 # Get data for the selected year without filtering by state
-                map_data = df[df["Year"] == map_year].copy()
+                map_data = df[df["Year"] == interactive_year].copy()
                 
                 # Remove "United States" if present for more accurate visualization
                 if "United States" in map_data["State"].values:
@@ -620,7 +775,7 @@ with tab4:
                 
                 with map_col:
                     metric_label = f"{selected_metric}{display_unit}"
-                    st.subheader(f"Choropleth Map for {metric_label} ({map_year})")
+                    st.subheader(f"Choropleth Map for {metric_label} ({interactive_year})")
                     
                     # Load US states geojson
                     @st.cache_data
@@ -665,10 +820,10 @@ with tab4:
                     folium.LayerControl().add_to(m)
                     
                     # Display the map in Streamlit - replace folium_static with st_folium
-                    st_folium(m, width=800, height=500)
+                    st_folium(m, width=800, height=500, key=f"choropleth_map_{interactive_year}")
                 
                 with data_col:
-                    st.subheader(f"Data for {map_year}")
+                    st.subheader(f"Data for {interactive_year}")
                     
                     # Format the value column to 2 decimal places
                     display_data = map_data[['State', selected_metric]].copy()
@@ -685,7 +840,7 @@ with tab4:
                     
                     # Sort the data by value
                     sorted_data = display_data.sort_values(by=display_col, ascending=False)
-                    st.dataframe(sorted_data, use_container_width=True)
+                    st.dataframe(sorted_data, use_container_width=True, key=f"choropleth_data_{interactive_year}")
                     
                     # Add some statistics about the data
                     st.subheader("Statistical Summary")
@@ -714,9 +869,10 @@ with tab4:
                         )
                     )
                     hist_fig.update_layout(height=250)
-                    st.plotly_chart(hist_fig, use_container_width=True)
+                    st.plotly_chart(hist_fig, use_container_width=True, key=f"choropleth_hist_{interactive_year}")
             
             elif chart_type == "Heat Map":
+                # Heat Map already shows all years, so we don't need a year slider here
                 # Filter for all states and all years
                 heatmap_data = df.copy()
                 
@@ -770,7 +926,7 @@ with tab4:
                         )
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key="heat_map")
                     
                     # Let the user know about the color scale change
                     st.info(f"""
