@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
 import folium
-from streamlit_folium import folium_static
+from streamlit_folium import st_folium  # Change from folium_static to st_folium
 import requests
 from folium.plugins import HeatMap
 
@@ -42,32 +42,16 @@ with tab1:
     
     # Show Data Summary first
     st.subheader("Dataset Summary")
+    st.write(f"- **Years covered:** {df['Year'].min()} to {df['Year'].max()}")
+    st.write(f"- **Number of states:** {df['State'].nunique()}")
+    st.write(f"- **Total records:** {len(df)}")
     
-    # Create a bordered container for the summary
-    with st.container():
-        st.markdown("""
-        <style>
-        .summary-container {
-            border: 1px solid #ccc;
-            border-radius: 10px;
-            padding: 15px;
-            background-color: #f8f9fa;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('<div class="summary-container">', unsafe_allow_html=True)
-        st.write(f"- **Years covered:** {df['Year'].min()} to {df['Year'].max()}")
-        st.write(f"- **Number of states:** {df['State'].nunique()}")
-        st.write(f"- **Total records:** {len(df)}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
     # Now show data preview
     st.subheader("Data Preview")
     st.write("Below are the first 5 rows from the dataset to provide a glimpse of the actual data:")
     st.dataframe(df.head(5), use_container_width=True)
     
-    # Add Data Dictionary with border
+    # Add Data Dictionary 
     st.subheader("Data Dictionary")
     st.write("""
     The data dictionary provides information about each column in the dataset, including its data type and description.
@@ -102,33 +86,7 @@ with tab1:
         "Data.Totals.Violent.Robbery": "Integer - Total number of robberies"
     }
     
-    # Add CSS for table border
-    st.markdown("""
-    <style>
-    .dict-container {
-        border: 2px solid #0078d7;
-        border-radius: 5px;
-        padding: 10px;
-        margin-bottom: 20px;
-    }
-    .dict-table {
-        width: 100%;
-    }
-    .dict-table td {
-        padding: 5px;
-        border-bottom: 1px solid #ddd;
-    }
-    .dict-table tr:nth-child(even) {
-        background-color: #f5f5f5;
-    }
-    .dict-table strong {
-        color: #0078d7;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Display as two columns within a bordered container
-    st.markdown('<div class="dict-container">', unsafe_allow_html=True)
+    # Display as two columns
     col1, col2 = st.columns(2)
     
     # Split the dictionary into two parts for better display
@@ -136,18 +94,12 @@ with tab1:
     half_point = len(items) // 2
     
     with col1:
-        st.markdown('<table class="dict-table">', unsafe_allow_html=True)
         for col, desc in items[:half_point]:
-            st.markdown(f'<tr><td><strong>{col}</strong></td><td>{desc}</td></tr>', unsafe_allow_html=True)
-        st.markdown('</table>', unsafe_allow_html=True)
+            st.write(f"**{col}**: {desc}")
     
     with col2:
-        st.markdown('<table class="dict-table">', unsafe_allow_html=True)
         for col, desc in items[half_point:]:
-            st.markdown(f'<tr><td><strong>{col}</strong></td><td>{desc}</td></tr>', unsafe_allow_html=True)
-        st.markdown('</table>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+            st.write(f"**{col}**: {desc}")
 
 # Tab 2: Data Table
 with tab2:
@@ -250,7 +202,7 @@ with tab4:
         chart_type = st.selectbox(
             "Select Chart Type",
             ["Bar Chart", "Stacked Bar Chart", "Line Chart", "Histogram", 
-             "Pie Chart", "Scatter Plot", "Choropleth Map", "Bubble Chart"],
+             "Pie Chart", "Scatter Plot", "Choropleth Map", "Heat Map"],
             key="chart_type_select"
         )
         
@@ -272,15 +224,24 @@ with tab4:
         
         # Replace year range slider with year selection
         years = sorted(df["Year"].unique().tolist())
-        selected_year = st.selectbox(
-            "Select Year (optional)",
-            options=["All Years"] + years,
-            index=0,  # Default to "All Years"
-        )
+        # Only show year selection if appropriate for the chart type
+        if chart_type in ["Bar Chart", "Stacked Bar Chart", "Pie Chart", "Choropleth Map"]:
+            selected_year = st.selectbox(
+                "Select Year",
+                options=["All Years"] + years,
+                index=0,  # Default to "All Years"
+            )
+        elif chart_type == "Heat Map":
+            # For Heat Map, set the year to "All Years" implicitly but don't show the widget
+            selected_year = "All Years"
+            st.write("*Heat Map visualizes data across all years automatically*")
+        else:
+            # For other chart types
+            selected_year = "All Years"
         
-        # For line chart, add option to aggregate all states
+        # For line chart, add option to aggregate all states, default to True
         if chart_type == "Line Chart":
-            aggregate_states = st.checkbox("Aggregate all states (single trend line)", value=False)
+            aggregate_states = st.checkbox("Aggregate all states (single trend line)", value=True)
             aggregation_method = st.radio(
                 "Aggregation method:",
                 ["Mean (Average)", "Sum (Total)"],
@@ -299,24 +260,25 @@ with tab4:
                 "Property Crime Totals": [col for col in df.columns if "Data.Totals.Property" in col]
             }
             
+            # Remove Population from options for Stacked Bar Chart
+            if chart_type == "Stacked Bar Chart":
+                metric_groups.pop("Population", None)
+            
             metric_group = st.selectbox("Select Metric Group", list(metric_groups.keys()))
-            selected_metric = st.selectbox("Select Specific Metric", metric_groups[metric_group])
-        
-        # For scatter plot and bubble chart
-        if chart_type in ["Scatter Plot", "Bubble Chart"]:
+            
+            # Only show the specific metric selection for chart types other than Stacked Bar Chart
+            if chart_type != "Stacked Bar Chart":
+                selected_metric = st.selectbox("Select Specific Metric", metric_groups[metric_group])
+            else:
+                # For Stacked Bar Chart, we'll use the first metric in the group (All) by default
+                selected_metric = [col for col in metric_groups[metric_group] if ".All" in col][0]
+                # Display a message about how the stacked bar chart works
+                st.info("Stacked Bar Chart shows the breakdown of components for the selected crime category.")
+
+        # For scatter plot only (removed bubble chart)
+        if chart_type in ["Scatter Plot"]:
             x_metric = st.selectbox("Select X Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=0)
             y_metric = st.selectbox("Select Y Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=1)
-            
-            if chart_type == "Bubble Chart":
-                size_metric = st.selectbox("Select Size Metric", df.select_dtypes(include=[np.number]).columns.tolist(), index=2)
-                # Add bubble size configuration
-                bubble_size_multiplier = st.slider("Bubble Size Multiplier", min_value=0.1, max_value=3.0, value=1.0, step=0.1)
-                
-                # Add preset configuration for property vs violent crime comparison
-                if st.button("Compare Property vs Violent Crime Rates"):
-                    x_metric = "Data.Rates.Property.All"
-                    y_metric = "Data.Rates.Violent.All"
-                    size_metric = "Data.Population"
         
         # For pie chart
         if chart_type == "Pie Chart":
@@ -342,14 +304,19 @@ with tab4:
                 horizontal=True
             )
         
-        # Button to reset to default view - fixed implementation
-        if st.button("Reset Chart View"):
-            # Clear session state to reset all selections
-            for key in list(st.session_state.keys()):
-                if key.startswith('chart_'):
-                    del st.session_state[key]
-            # Now trigger a rerun
-            st.rerun()
+        # For heat map
+        if chart_type == "Heat Map":
+            # Default to violent crime rates
+            heatmap_default_idx = next((i for i, x in enumerate(df.columns) if x == "Data.Rates.Violent.All"), 0)
+            heatmap_metric = st.selectbox(
+                "Select Metric for Heat Map", 
+                df.select_dtypes(include=[np.number]).columns.tolist(),
+                index=heatmap_default_idx
+            )
+
+        # For bar and stacked bar chart, add year aggregation explanation if All Years selected
+        if chart_type in ["Bar Chart", "Stacked Bar Chart"] and selected_year == "All Years":
+            st.info("Showing average values across all years")
 
     # Right column for chart description and visualization
     with col2:
@@ -364,7 +331,7 @@ with tab4:
             "Pie Chart": "Pie charts show proportional distribution and work best with a small number of categories that add up to a meaningful whole.",
             "Scatter Plot": "Scatter plots show the relationship between two variables and are useful for identifying correlations and patterns.",
             "Choropleth Map": "Choropleth maps use color intensity to represent data values across geographic areas, making spatial patterns more visible.",
-            "Bubble Chart": "Bubble charts display three dimensions of data, using the size of bubbles as an additional variable."
+            "Heat Map": "Heat maps visualize data through color variation in a matrix format, showing patterns and trends across two categorical dimensions (states and years)."
         }
         
         st.info(chart_descriptions[chart_type])
@@ -377,56 +344,111 @@ with tab4:
             # Apply state filter
             filtered_df = df[df["State"].isin(selected_states)]
             
-            # Apply year filter if a specific year is selected
+            # Apply year filter if a specific year is selected and not viewing Heat Map
             if selected_year != "All Years":
                 filtered_df = filtered_df[filtered_df["Year"] == selected_year]
         
         # Display different charts based on selection
         if not filtered_df.empty:
             if chart_type == "Bar Chart":
-                # Group by state and take the mean of the selected metric
-                chart_data = filtered_df.groupby("State")[selected_metric].mean().reset_index()
+                if selected_year == "All Years":
+                    # Group by state and take the mean of the selected metric across all years
+                    chart_title = f"Average {selected_metric} by State (All Years)"
+                    chart_data = filtered_df.groupby("State")[selected_metric].mean().reset_index()
+                else:
+                    # Filter to specific year and just group by state
+                    year_data = filtered_df[filtered_df["Year"] == int(selected_year)]
+                    chart_title = f"{selected_metric} by State ({selected_year})"
+                    chart_data = year_data.groupby("State")[selected_metric].mean().reset_index()
+                
                 chart_data = chart_data.sort_values(selected_metric, ascending=False)
                 
                 fig = px.bar(chart_data, x="State", y=selected_metric, 
-                            title=f"Average {selected_metric} by State",
+                            title=chart_title,
                             color="State")
                 
                 fig.update_layout(xaxis_title="State", yaxis_title=selected_metric)
                 st.plotly_chart(fig, use_container_width=True)
             
             elif chart_type == "Stacked Bar Chart":
-                # For stacked bar chart, we need to pick related metrics
+                # For stacked bar chart, we always need to work with component metrics
+                # Get the base category (Property/Violent and Rates/Totals)
+                crime_category = ""
+                data_type = ""
+                
                 if "Property" in selected_metric:
+                    crime_category = "Property"
                     if "Rates" in selected_metric:
-                        metrics = [col for col in df.columns if "Data.Rates.Property" in col and col != "Data.Rates.Property.All"]
+                        data_type = "Rates"
                     else:
-                        metrics = [col for col in df.columns if "Data.Totals.Property" in col and col != "Data.Totals.Property.All"]
+                        data_type = "Totals"
                 elif "Violent" in selected_metric:
+                    crime_category = "Violent"
                     if "Rates" in selected_metric:
-                        metrics = [col for col in df.columns if "Data.Rates.Violent" in col and col != "Data.Rates.Violent.All"]
+                        data_type = "Rates"
                     else:
-                        metrics = [col for col in df.columns if "Data.Totals.Violent" in col and col != "Data.Totals.Violent.All"]
+                        data_type = "Totals"
+                
+                # Now, find the component metrics regardless of which specific metric was selected
+                metrics = [col for col in df.columns if f"Data.{data_type}.{crime_category}" in col 
+                          and "All" not in col]
+                
+                # Create a more readable title based on the selected metric
+                if "All" in selected_metric:
+                    chart_subtitle = f"All {crime_category} Crime {data_type}"
                 else:
-                    metrics = ["Data.Population"]
+                    # Extract the specific crime type from the selected metric
+                    specific_crime = selected_metric.split(".")[-1].capitalize()
+                    chart_subtitle = f"{crime_category} Crime {data_type} - {specific_crime}"
                 
-                chart_data = filtered_df.groupby("State")[metrics].mean().reset_index()
+                if selected_year == "All Years":
+                    # Average across all years
+                    chart_title = f"Breakdown of {chart_subtitle} by State (All Years)"
+                    chart_data = filtered_df.groupby("State")[metrics].mean().reset_index()
+                else:
+                    # Filter to specific year
+                    year_data = filtered_df[filtered_df["Year"] == int(selected_year)]
+                    chart_title = f"Breakdown of {chart_subtitle} by State ({selected_year})"
+                    chart_data = year_data.groupby("State")[metrics].mean().reset_index()
                 
-                # Melt data for stacked bar chart
+                # Clean up metric names for the legend
                 melted_data = pd.melt(chart_data, id_vars=["State"], value_vars=metrics, 
                                     var_name="Crime Type", value_name="Value")
+                
+                # Extract cleaner crime type names for display in the legend
+                melted_data["Crime Type"] = melted_data["Crime Type"].apply(
+                    lambda x: x.split(".")[-1].capitalize() if "." in x else x
+                )
+                
+                # Ensure consistent colors for crime types
+                crime_colors = {
+                    "Assault": "#1f77b4",  # blue
+                    "Murder": "#d62728",   # red
+                    "Rape": "#ff7f0e",     # orange
+                    "Robbery": "#2ca02c",  # green
+                    "Burglary": "#9467bd", # purple
+                    "Larceny": "#8c564b",  # brown
+                    "Motor": "#e377c2"     # pink
+                }
                 
                 # Determine whether to use absolute values or percentages
                 if 'stacked_y_option' in locals() and stacked_y_option == "Percentage (100% Stacked)":
                     fig = px.bar(melted_data, x="State", y="Value", color="Crime Type",
-                                title=f"Percentage Breakdown of {selected_metric} by State",
-                                barmode='relative')  # 100% stacked bar
+                                title=chart_title,
+                                barmode='relative',  # 100% stacked bar
+                                color_discrete_map=crime_colors)
                 else:
                     fig = px.bar(melted_data, x="State", y="Value", color="Crime Type",
-                                title=f"Breakdown of {selected_metric} by State")
+                                title=chart_title,
+                                color_discrete_map=crime_colors)
                 
                 y_axis_title = "Percentage (%)" if 'stacked_y_option' in locals() and stacked_y_option == "Percentage (100% Stacked)" else "Value"
-                fig.update_layout(xaxis_title="State", yaxis_title=y_axis_title)
+                fig.update_layout(
+                    xaxis_title="State", 
+                    yaxis_title=y_axis_title,
+                    legend_title="Crime Type"
+                )
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Add explanation based on y-axis selection
@@ -476,27 +498,67 @@ with tab4:
                         """)
                 
             elif chart_type == "Histogram":
-                # Create histogram without color breakdown by state
-                fig = px.histogram(filtered_df, x=selected_metric,
-                                title=f"Distribution of {selected_metric}")
+                # Create columns for histogram and stats side by side
+                hist_col, stat_col = st.columns([3, 1])
                 
-                fig.update_layout(
-                    xaxis_title=selected_metric,
-                    yaxis_title="Count"
-                )
+                with hist_col:
+                    # Create histogram without color breakdown by state
+                    fig = px.histogram(filtered_df, x=selected_metric,
+                                      title=f"Distribution of {selected_metric}")
+                    
+                    # Add borders to histogram bars
+                    fig.update_traces(
+                        marker=dict(
+                            line=dict(width=1, color='black')
+                        )
+                    )
+                    
+                    fig.update_layout(
+                        xaxis_title=selected_metric,
+                        yaxis_title="Count"
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
                 
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Add statistical summary for the selected metric
-                st.subheader(f"Statistical Summary for {selected_metric}")
-                hist_stats = {
-                    "Mean": filtered_df[selected_metric].mean().round(2),
-                    "Median": filtered_df[selected_metric].median().round(2),
-                    "Standard Deviation": filtered_df[selected_metric].std().round(2),
-                    "Min": filtered_df[selected_metric].min().round(2),
-                    "Max": filtered_df[selected_metric].max().round(2)
-                }
-                st.write(hist_stats)
+                with stat_col:
+                    # Add statistical summary for the selected metric
+                    st.subheader("Statistical Summary")
+                    hist_stats = {
+                        "Mean": filtered_df[selected_metric].mean().round(2),
+                        "Median": filtered_df[selected_metric].median().round(2),
+                        "Std Dev": filtered_df[selected_metric].std().round(2),
+                        "Min": filtered_df[selected_metric].min().round(2),
+                        "Max": filtered_df[selected_metric].max().round(2),
+                        "Count": len(filtered_df)
+                    }
+                    
+                    # Create a styled display for the statistics
+                    st.markdown("""
+                    <style>
+                    .stat-box {
+                        background-color: #f0f2f6;
+                        border-radius: 5px;
+                        padding: 10px;
+                        margin-bottom: 10px;
+                    }
+                    .stat-label {
+                        font-weight: bold;
+                        color: #0e1117;
+                    }
+                    .stat-value {
+                        font-size: 18px;
+                        color: #0078ff;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    for stat, value in hist_stats.items():
+                        st.markdown(f"""
+                        <div class="stat-box">
+                            <div class="stat-label">{stat}</div>
+                            <div class="stat-value">{value}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                 
             elif chart_type == "Pie Chart":
                 # Filter to specific year for pie chart
@@ -535,33 +597,6 @@ with tab4:
                 fig.update_layout(xaxis_title=x_metric, yaxis_title=y_metric)
                 st.plotly_chart(fig, use_container_width=True)
                 
-            elif chart_type == "Bubble Chart":
-                fig = px.scatter(filtered_df, x=x_metric, y=y_metric, 
-                                size=size_metric, color="State",
-                                hover_name="State", hover_data=["Year"],
-                                size_max=15 * bubble_size_multiplier,  # Apply the size multiplier
-                                title=f"Bubble Chart of {x_metric}, {y_metric}, and {size_metric}")
-                
-                # Add reference labels for commonly used metrics
-                if x_metric == "Data.Rates.Property.All" and y_metric == "Data.Rates.Violent.All":
-                    fig.update_layout(
-                        xaxis_title="Property Crime Rate (per 100,000)",
-                        yaxis_title="Violent Crime Rate (per 100,000)",
-                    )
-                else:
-                    fig.update_layout(xaxis_title=x_metric, yaxis_title=y_metric)
-                    
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Add explanation for property vs violent crime comparison
-                if x_metric == "Data.Rates.Property.All" and y_metric == "Data.Rates.Violent.All":
-                    st.info("""
-                    This chart compares property crime rates versus violent crime rates across different states.
-                    Each bubble represents a state, with the size indicating its population.
-                    States in the upper right have high rates of both types of crime,
-                    while those in the lower left have lower rates of both types.
-                    """)
-                
             elif chart_type == "Choropleth Map":
                 # Get data for the selected year without filtering by state
                 map_data = df[df["Year"] == map_year].copy()
@@ -570,11 +605,22 @@ with tab4:
                 if "United States" in map_data["State"].values:
                     map_data = map_data[map_data["State"] != "United States"]
                 
+                # Create a display version of the metric for population values
+                display_metric = selected_metric
+                display_unit = ""
+                
+                # If the selected metric is population, convert to thousands for better display
+                if "Population" in selected_metric:
+                    map_data["display_value"] = map_data[selected_metric] / 1000
+                    display_metric = "display_value"
+                    display_unit = " (thousands)"
+                
                 # Create side-by-side columns for map and data
                 map_col, data_col = st.columns([3, 2])
                 
                 with map_col:
-                    st.subheader(f"Choropleth Map for {selected_metric} ({map_year})")
+                    metric_label = f"{selected_metric}{display_unit}"
+                    st.subheader(f"Choropleth Map for {metric_label} ({map_year})")
                     
                     # Load US states geojson
                     @st.cache_data
@@ -586,8 +632,8 @@ with tab4:
                     geojson_data = load_geojson()
                     
                     # Calculate min and max values for proper color scaling
-                    vmin = map_data[selected_metric].min()
-                    vmax = map_data[selected_metric].max()
+                    vmin = map_data[display_metric].min()
+                    vmax = map_data[display_metric].max()
                     
                     # Create a folium map
                     m = folium.Map(location=[37.0902, -95.7129], zoom_start=4)
@@ -597,12 +643,12 @@ with tab4:
                         geo_data=geojson_data,
                         name='choropleth',
                         data=map_data,
-                        columns=['State', selected_metric],
+                        columns=['State', display_metric],
                         key_on='feature.properties.name',
                         fill_color='YlOrRd',
                         fill_opacity=0.7,
                         line_opacity=0.2,
-                        legend_name=selected_metric,
+                        legend_name=metric_label,
                         threshold_scale=np.linspace(vmin, vmax, 8).tolist(),  # Create 8 color bins between min and max
                     ).add_to(m)
                     
@@ -618,34 +664,129 @@ with tab4:
                     # Add layer control to toggle layers
                     folium.LayerControl().add_to(m)
                     
-                    # Display the map in Streamlit
-                    folium_static(m)
+                    # Display the map in Streamlit - replace folium_static with st_folium
+                    st_folium(m, width=800, height=500)
                 
                 with data_col:
                     st.subheader(f"Data for {map_year}")
                     
                     # Format the value column to 2 decimal places
                     display_data = map_data[['State', selected_metric]].copy()
-                    display_data[selected_metric] = display_data[selected_metric].round(2)
+                    
+                    # Handle population metrics for display
+                    if "Population" in selected_metric:
+                        display_data["Population (thousands)"] = (display_data[selected_metric] / 1000).round(2)
+                        display_col = "Population (thousands)"
+                        # Drop the original column to avoid confusion
+                        display_data.drop(columns=[selected_metric], inplace=True)
+                    else:
+                        display_data[selected_metric] = display_data[selected_metric].round(2)
+                        display_col = selected_metric
                     
                     # Sort the data by value
-                    sorted_data = display_data.sort_values(by=selected_metric, ascending=False)
+                    sorted_data = display_data.sort_values(by=display_col, ascending=False)
                     st.dataframe(sorted_data, use_container_width=True)
                     
                     # Add some statistics about the data
                     st.subheader("Statistical Summary")
+                    
+                    # Use the appropriate column for statistics
+                    stats_col = display_metric if "Population" in selected_metric else selected_metric
+                    
                     stats = {
-                        "Maximum Value": f"{map_data[selected_metric].max():.2f} ({map_data.loc[map_data[selected_metric].idxmax(), 'State']})",
-                        "Minimum Value": f"{map_data[selected_metric].min():.2f} ({map_data.loc[map_data[selected_metric].idxmin(), 'State']})",
-                        "Average": f"{map_data[selected_metric].mean():.2f}",
-                        "Median": f"{map_data[selected_metric].median():.2f}",
+                        "Maximum Value": f"{map_data[stats_col].max():.2f} ({map_data.loc[map_data[stats_col].idxmax(), 'State']})",
+                        "Minimum Value": f"{map_data[stats_col].min():.2f} ({map_data.loc[map_data[stats_col].idxmin(), 'State']})",
+                        "Average": f"{map_data[stats_col].mean():.2f}",
+                        "Median": f"{map_data[stats_col].median():.2f}",
                     }
                     for stat, value in stats.items():
                         st.write(f"**{stat}:** {value}")
                     
-                    # Add a histogram showing the distribution
+                    # Add a histogram showing the distribution with borders
                     st.subheader("Distribution")
-                    hist_fig = px.histogram(map_data, x=selected_metric, nbins=20,
-                                          title=f"Distribution of {selected_metric}")
+                    hist_title = f"Distribution of {selected_metric}{display_unit}"
+                    hist_fig = px.histogram(map_data, x=display_metric,
+                                          title=hist_title)
+                    # Add borders to histogram bars
+                    hist_fig.update_traces(
+                        marker=dict(
+                            line=dict(width=1, color='black')
+                        )
+                    )
                     hist_fig.update_layout(height=250)
                     st.plotly_chart(hist_fig, use_container_width=True)
+            
+            elif chart_type == "Heat Map":
+                # Filter for all states and all years
+                heatmap_data = df.copy()
+                
+                # Remove "United States" if present for more accurate visualization
+                if "United States" in heatmap_data["State"].values:
+                    heatmap_data = heatmap_data[heatmap_data["State"] != "United States"]
+                
+                # Filter to selected states only
+                heatmap_data = heatmap_data[heatmap_data["State"].isin(selected_states)]
+                
+                # Use a try-except block to handle potential errors with the pivot operation
+                try:
+                    # Pivot the data to create a matrix suitable for a heatmap
+                    pivot_data = heatmap_data.pivot_table(
+                        values=heatmap_metric,
+                        index="State",
+                        columns="Year"
+                    )
+                    
+                    # Sort the states by their average value to group similar states together
+                    state_avg = heatmap_data.groupby("State")[heatmap_metric].mean()
+                    pivot_data = pivot_data.reindex(state_avg.sort_values(ascending=False).index)
+                    
+                    # Calculate min and max values for better color range
+                    vmin = pivot_data.values.min()
+                    vmax = pivot_data.values.max()
+                    
+                    # Create a custom color scale with more contrast
+                    # Use a diverging color scale with higher contrast
+                    fig = px.imshow(
+                        pivot_data,
+                        labels=dict(x="Year", y="State", color=heatmap_metric),
+                        title=f"Heat Map of {heatmap_metric} Across States and Years",
+                        # Use a higher contrast color scale
+                        color_continuous_scale='RdBu_r',
+                        aspect="auto",  # Adjust aspect ratio to fit the display
+                        zmin=vmin,  # Set explicit min value
+                        zmax=vmax,  # Set explicit max value
+                        color_continuous_midpoint=np.median(pivot_data.values.flatten())  # Set midpoint at median
+                    )
+                    
+                    # Add hover text showing the exact values and improve layout
+                    fig.update_layout(
+                        height=600,
+                        xaxis=dict(tickmode='linear', dtick=5),  # Show year ticks every 5 years
+                        coloraxis_colorbar=dict(
+                            title=heatmap_metric,
+                            thicknessmode="pixels", thickness=20,
+                            lenmode="pixels", len=400,
+                            title_side="right",
+                        )
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Let the user know about the color scale change
+                    st.info(f"""
+                    **Color Scale Interpretation:**
+                    The heat map uses a diverging color scale where:
+                    - Dark red indicates values higher than the median ({np.median(pivot_data.values.flatten()):.2f})
+                    - Dark blue indicates values lower than the median
+                    - States are sorted by their average {heatmap_metric} value (high to low)
+                    
+                    This makes it easier to see differences between states and identify trends over time.
+                    """)
+                    
+                except Exception as e:
+                    st.error(f"Error creating heat map: {str(e)}")
+                    st.write("This may occur if there's insufficient data for the selected states.")
+
+
+
+
