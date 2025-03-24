@@ -11,6 +11,7 @@ from streamlit_folium import st_folium  # Change from folium_static to st_folium
 import requests
 from folium.plugins import HeatMap
 
+
 # Check if statsmodels is installed for trendline functionality
 try:
     import statsmodels.api as sm
@@ -21,6 +22,12 @@ except ImportError:
 # Set page title and layout
 st.set_page_config(layout="wide", page_title="US State Crime Data Analysis")
 
+# Add title bar at the top
+st.markdown("""
+<div style="background-color:#0e1117; padding:10px; border-radius:5px; margin-bottom:20px;">
+    <h1 style="color:white; text-align:center; margin:0;">US State Crime Data</h1>
+</div>
+""", unsafe_allow_html=True)
 
 def change_chart_type():
     st.session_state.chart_type = st.session_state.chart_type_select
@@ -38,6 +45,8 @@ df = load_data()
 
 # Create tabs
 tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Data Table", "Descriptive Statistics", "Charts"])
+
+
 
 # Tab 1: Overview
 with tab1:
@@ -325,15 +334,26 @@ with tab4:
             pie_metric_group = st.selectbox("Select Metric Group for Pie Chart", list(pie_metric_groups.keys()), key="pie_metric_group")
             pie_metric = st.selectbox("Select Specific Metric for Pie Chart", pie_metric_groups[pie_metric_group], key="pie_specific_metric")
             
-            # Replace the year selection with top N states selector
+            # Get the maximum number of states for slider upper limit - exclude "United States" if present
+            max_states = len(states)
+            
+            # Slider to control the number of states shown individually (from 1 to max_states)
             top_n = st.slider(
                 "Number of states to show individually",
-                min_value=3,
-                max_value=15,
-                value=6,
+                min_value=1,  # Allow as few as 1 state to be shown
+                max_value=max_states,  # Upper limit is the total number of available states
+                value=min(6, max_states),  # Default to 6 or the maximum available if less than 6
                 step=1,
                 key="pie_chart_top_n"
             )
+            
+            # Add information about state selection
+            if top_n == 1:
+                st.info("Only the top state will be shown, all others will be grouped as 'Others'")
+            elif top_n == max_states:
+                st.info("All states will be shown individually (no 'Others' category)")
+            else:
+                st.info(f"The top {top_n} states will be shown individually, the rest will be grouped as 'Others'")
             
             # Other options for pie chart
             show_percentage = st.checkbox("Show percentages on pie chart", value=True, key="pie_show_percentage")
@@ -345,11 +365,14 @@ with tab4:
         
         # For heat map
         if chart_type == "Heat Map":
+            # Get numeric columns but exclude 'Year' since it's used as the x-axis in the heat map
+            heatmap_metric_options = [col for col in df.select_dtypes(include=[np.number]).columns.tolist() if col != 'Year']
+            
             # Default to violent crime rates
-            heatmap_default_idx = next((i for i, x in enumerate(df.columns) if x == "Data.Rates.Violent.All"), 0)
+            heatmap_default_idx = next((i for i, x in enumerate(heatmap_metric_options) if x == "Data.Rates.Violent.All"), 0)
             heatmap_metric = st.selectbox(
                 "Select Metric for Heat Map", 
-                df.select_dtypes(include=[np.number]).columns.tolist(),
+                heatmap_metric_options,
                 index=heatmap_default_idx,
                 key="heatmap_metric"
             )
@@ -646,22 +669,32 @@ with tab4:
                 chart_col, data_col = st.columns([3, 1])
                 
                 with chart_col:
-                    # Get top N states by the selected metric, where N is user-defined
-                    top_states = filtered_df.nlargest(top_n, pie_metric)["State"].tolist()
+                    # Check if we have enough states in the filtered data
+                    actual_states_count = filtered_df["State"].nunique()
+                    effective_top_n = min(top_n, actual_states_count)
                     
-                    # Create a new DataFrame with "Others" category
+                    # Get top N states by the selected metric
+                    top_states = filtered_df.nlargest(effective_top_n, pie_metric)["State"].tolist()
+                    
+                    # Create a new DataFrame with "Others" category if needed
                     pie_chart_data = filtered_df.copy()
-                    pie_chart_data.loc[~pie_chart_data["State"].isin(top_states), "State"] = "Others"
+                    
+                    # Only create "Others" category if we're not showing all states
+                    if effective_top_n < actual_states_count:
+                        pie_chart_data.loc[~pie_chart_data["State"].isin(top_states), "State"] = "Others"
                     
                     # Aggregate the data
                     pie_chart_data = pie_chart_data.groupby("State")[pie_metric].sum().reset_index()
+                    
+                    # Sort by value for consistent colors (largest first)
+                    pie_chart_data = pie_chart_data.sort_values(by=pie_metric, ascending=False)
                     
                     # Set up and display pie chart with customizations
                     fig = px.pie(
                         pie_chart_data, 
                         values=pie_metric, 
                         names="State",
-                        title=f"Distribution of {pie_metric} by State ({selected_year})"
+                        title=f"Distribution of {pie_metric} by State ({selected_year}) - Top {effective_top_n} States"
                     )
                     
                     # Customize the pie chart based on user preferences
@@ -673,6 +706,11 @@ with tab4:
                     # Add hover data with values
                     fig.update_traces(hovertemplate='<b>%{label}</b><br>Value: %{value:,.2f}<br>Percentage: %{percent:.1%}')
                     
+                    # Add option to pull the largest slice slightly out (for emphasis)
+                    if len(pie_chart_data) > 1:
+                        pull_values = [0.05 if i == 0 else 0 for i in range(len(pie_chart_data))]
+                        fig.update_traces(pull=pull_values)
+                    
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with data_col:
@@ -680,7 +718,6 @@ with tab4:
                     
                     # Sort the data by value for better display
                     display_data = pie_chart_data.copy()
-                    display_data = display_data.sort_values(by=pie_metric, ascending=False)
                     
                     # Round numeric values for better display
                     display_data[pie_metric] = display_data[pie_metric].round(2)
@@ -693,22 +730,19 @@ with tab4:
                     # Display the data table
                     st.dataframe(display_data, use_container_width=True, key=f"pie_chart_data_{selected_year}")
                     
-                    # Add an explanation
-                    if "Others" in display_data["State"].values:
-                        st.info(f"""
-                        **Note**: The pie chart shows the top {top_n} states individually.
-                        The "Others" category aggregates data from the remaining states 
-                        to improve chart readability.
-                        """)
-                    
                     # Add summary statistics
                     st.subheader("Summary")
                     st.write(f"**Total {pie_metric}:** {total_value:,.2f}")
-                    st.write(f"**Number of states shown individually:** {len(display_data) - ('Others' in display_data['State'].values)}")
+                    st.write(f"**Number of states shown:** {len(display_data)}")
+                    st.write(f"**Number of states selected:** {actual_states_count}")
+                    
+                    # Only show Others info if it exists
                     if "Others" in display_data["State"].values:
                         others_value = display_data.loc[display_data["State"] == "Others", pie_metric].values[0]
                         others_pct = (others_value / total_value * 100)
-                        st.write(f"**'Others' category represents:** {others_value:,.2f} ({others_pct:.1f}%)")
+                        others_state_count = actual_states_count - effective_top_n
+                        st.write(f"**'Others' category:** {others_value:,.2f} ({others_pct:.1f}%)")
+                        st.write(f"**'Others' represents:** {others_state_count} states")
 
             elif chart_type == "Scatter Plot":
                 # Configure the scatter plot
